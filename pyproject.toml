@@ -7,7 +7,7 @@ name = "snowflakes"
 authors = [
     {name = "Roy T. Smart", email = "roytsmart@gmail.com"},
 ]
-description = "A Numba-accelerated Python library for simulating snow crystal growth"
+description = "A Python library for simulating snow crystal growth, accelerated with Numba where it is installed"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -35,6 +35,7 @@ doc = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/byrdie/snowflakes"
+Homepage = "https://github.com/roytsmart/snowflakes"
+"Web app" = "https://roytsmart.github.io/snowflakes/"
 
 [tool.setuptools_scm]
