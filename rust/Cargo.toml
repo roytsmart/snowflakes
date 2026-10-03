@@ -1,0 +1,16 @@
+[package]
+name = "snowflakes"
+version = "0.1.0"
+edition = "2024"
+description = "The snow crystal growth model of Gravner and Griffeath (2008), compiled to WebAssembly for the snowflakes web app"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
