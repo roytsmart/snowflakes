@@ -237,8 +237,8 @@ presetSelect.addEventListener("change", () => {
   restart(true);
 });
 
-// A smaller grid on a phone, where Python runs several times slower.
-size = window.matchMedia("(max-width: 700px)").matches ? 201 : 301;
+// A smaller grid on a phone, which computes several times slower.
+size = window.matchMedia("(max-width: 700px)").matches ? 301 : 401;
 sizeSelect.value = String(size);
 sizeSelect.addEventListener("change", () => {
   size = Number(sizeSelect.value);

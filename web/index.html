@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snowflakes</title>
-<meta name="description" content="Grow a snow crystal in your browser with the model of Gravner and Griffeath (2008), running in Python with Pyodide.">
+<meta name="description" content="Grow a snow crystal in your browser with the model of Gravner and Griffeath (2008).">
 <meta name="theme-color" content="#081026">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-12 -12 24 24'%3E%3Cg stroke='%23cfe3ff' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath id='a' d='M0 0V-10M0-6l-3-3M0-6l3-3'/%3E%3Cuse href='%23a' transform='rotate(60)'/%3E%3Cuse href='%23a' transform='rotate(120)'/%3E%3Cuse href='%23a' transform='rotate(180)'/%3E%3Cuse href='%23a' transform='rotate(240)'/%3E%3Cuse href='%23a' transform='rotate(300)'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
@@ -13,13 +13,13 @@
 <header>
   <h1>Snowflakes</h1>
   <p>Grow a snow crystal from a single cell of ice, with the model of
-     Gravner and Griffeath, running in Python in your browser.</p>
+     Gravner and Griffeath.</p>
 </header>
 
 <main>
   <div class="stage">
     <canvas id="crystal" role="img" aria-label="The growing snow crystal"></canvas>
-    <p id="overlay">Loading Python…</p>
+    <p id="overlay">Loading…</p>
   </div>
 
   <div class="controls">
@@ -39,7 +39,8 @@
       <select id="size">
         <option value="201">Small: 201 cells, quick</option>
         <option value="301">Medium: 301 cells</option>
-        <option value="401">Large: 401 cells, slow</option>
+        <option value="401">Large: 401 cells</option>
+        <option value="601">Huge: 601 cells, slow</option>
       </select>
     </label>
 
@@ -57,9 +58,9 @@
      <a href="https://doi.org/10.1016/j.physd.2007.09.008">“Modeling snow
      crystal growth II: A mesoscopic lattice map with plausible
      dynamics”</a>, Physica D 237, 385 (2008).
-     It runs here in the
+     It runs here compiled from Rust to WebAssembly, and matches the
      <a href="https://github.com/roytsmart/snowflakes">snowflakes</a>
-     Python package, with <a href="https://pyodide.org">Pyodide</a>.</p>
+     Python package bit for bit.</p>
 </footer>
 
 <script src="app.js"></script>
