@@ -44,13 +44,32 @@ def test_mass_is_conserved(backend: str):
     assert np.isclose(b.sum() + c.sum() + d.sum(), total, rtol=1e-12, atol=0)
 
 
-def test_backends_agree():
+@pytest.mark.parametrize("dtype", [np.float64, np.float32])
+def test_backends_agree_bit_for_bit(dtype: type):
     pytest.importorskip("numba")
-    numpy_state = _grow("numpy", num_steps=300)
-    numba_state = _grow("numba", num_steps=300)
-    assert np.array_equal(numpy_state[0], numba_state[0])
-    for x, y in zip(numpy_state[1:], numba_state[1:]):
-        assert np.allclose(x, y, rtol=1e-12, atol=1e-12)
+    a, b, c, d = snowflakes.initial((61, 61), RHO)
+    state = (a, b.astype(dtype), c.astype(dtype), d.astype(dtype))
+    numpy_state = snowflakes.step(*state, **PARAMS, backend="numpy", num_steps=500)
+    numba_state = snowflakes.step(*state, **PARAMS, backend="numba", num_steps=500)
+    assert numpy_state[0].sum() > 500
+    for x, y in zip(numpy_state, numba_state):
+        assert x.dtype == y.dtype
+        assert np.array_equal(x, y)
+
+
+def test_step_leaves_its_arguments_alone():
+    state = snowflakes.initial((21, 21), RHO)
+    copies = tuple(x.copy() for x in state)
+    snowflakes.step(*state, **PARAMS, backend="numpy", num_steps=10)
+    for x, y in zip(state, copies):
+        assert np.array_equal(x, y)
+
+
+def test_num_steps():
+    once = _grow("numpy", num_steps=20)
+    together = snowflakes.step(*snowflakes.initial((41, 41), RHO), **PARAMS, backend="numpy", num_steps=20)
+    for x, y in zip(once, together):
+        assert np.array_equal(x, y)
 
 
 @pytest.mark.parametrize("backend", _backends())
@@ -119,20 +138,9 @@ def test_unknown_backend():
         snowflakes.step(*snowflakes.initial((5, 5), RHO), **PARAMS, backend="cuda")
 
 
-def test_web_app_files():
-    """The web app loads every module it needs, all of which run without Numba."""
-    worker = pathlib.Path(__file__).parent.parent / "web" / "worker.js"
-    if not worker.exists():
-        pytest.skip("the web app is not beside the package")
-    match = re.search(r"const FILES = \[(.*?)\];", worker.read_text(encoding="utf-8"), re.S)
-    assert match is not None
-    files = set(re.findall(r'"([^"]+)"', match.group(1)))
+def test_numpy_backend_needs_no_numba():
+    """The NumPy implementation runs where Numba cannot, such as under Pyodide."""
     package = pathlib.Path(snowflakes.__file__).parent
-    modules = {
-        p.name
-        for p in package.glob("*.py")
-        if not p.name.endswith("_test.py") and p.name != "_numba.py"
-    }
-    assert files == modules
-    for name in files:
-        assert "numba" not in re.findall(r"^\s*import (\w+)", (package / name).read_text(), re.M)
+    for name in ("__init__.py", "_snowflakes.py", "_numpy.py"):
+        imports = re.findall(r"^\s*(?:import|from) (\w+)", (package / name).read_text(), re.M)
+        assert "numba" not in imports

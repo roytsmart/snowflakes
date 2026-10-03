@@ -1,4 +1,5 @@
 import types
+import typing
 import numpy as np
 
 __all__ = [
@@ -30,6 +31,100 @@ def _kernels(backend: str) -> types.ModuleType:
     else:
         raise ValueError(f"unknown backend {backend!r}")
     return kernels
+
+
+def _pad(x: np.ndarray, dtype: "type | np.dtype") -> np.ndarray:
+    """`x` as `dtype`, padded by one cell on each side."""
+    result = np.zeros((x.shape[0] + 2, x.shape[1] + 2), dtype=dtype)
+    result[1:-1, 1:-1] = x
+    return result
+
+
+class _Grid:
+    """
+    The state of the model, padded as the kernels need it, so that it can be
+    advanced many times without copying.
+    """
+
+    def __init__(
+        self,
+        a: np.ndarray,
+        b: np.ndarray,
+        c: np.ndarray,
+        d: np.ndarray,
+        backend: str,
+    ):
+        dtype = np.result_type(b, c, d)
+        if dtype.kind != "f":
+            dtype = np.dtype(float)
+        self.dtype = dtype
+        self.a = _pad(a, np.uint8)
+        self.b = _pad(b, dtype)
+        self.c = _pad(c, dtype)
+        self.d = _pad(d, dtype)
+        self.e = np.zeros_like(self.d)
+        self.count = np.zeros_like(self.a)
+        self.kernels = _kernels(backend)
+
+    def coefficients(
+        self,
+        alpha: float,
+        beta: float,
+        gamma: float,
+        theta: float,
+        kappa: float,
+        mu: float,
+    ) -> "dict[str, typing.Any]":
+        """The parameters as the kernels take them, rounded to the grid's type once."""
+        t = self.dtype.type
+        return dict(
+            alpha=t(alpha),
+            beta=t(beta),
+            theta=t(theta),
+            kappa=t(kappa),
+            one_minus_kappa=t(1 - kappa),
+            mu=t(mu),
+            one_minus_mu=t(1 - mu),
+            gamma=t(gamma),
+            one_minus_gamma=t(1 - gamma),
+            weights=np.arange(1, 8, dtype=self.dtype),
+        )
+
+    def step(
+        self,
+        coefficients: "dict[str, typing.Any]",
+        sigma: float,
+        rng: "None | np.random.Generator",
+    ) -> None:
+        """Advance the crystal by one update."""
+        self.d, self.e = self.kernels.step(
+            self.a,
+            self.b,
+            self.c,
+            self.d,
+            self.e,
+            self.count,
+            **coefficients,
+        )
+
+        # v. Noise: the vapor in each cell grows or shrinks by proportion
+        # sigma, each with probability one half.
+        if sigma:
+            if rng is None:
+                rng = np.random.default_rng()
+            vapor = self.d[1:-1, 1:-1]
+            factor = np.where(rng.random(vapor.shape) < 0.5, 1 - sigma, 1 + sigma)
+            vapor *= factor.astype(self.dtype)
+
+    def state(self) -> "tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]":
+        """Copies of the unpadded state."""
+        inside = (slice(1, -1), slice(1, -1))
+        return (
+            self.a[inside].astype(bool),
+            self.b[inside].copy(),
+            self.c[inside].copy(),
+            self.d[inside].copy(),
+        )
 
 
 def initial(
@@ -79,15 +174,18 @@ def step(
     sigma: float = 0,
     rng: "None | np.random.Generator" = None,
     backend: str = "auto",
+    num_steps: int = 1,
 ) -> "tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]":
     """
-    Advance the crystal by one update of the model of
-    Gravner and Griffeath (2008).
+    Advance a crystal by updates of the model of Gravner and Griffeath (2008).
 
     The grid is a triangular lattice stored on a square array, as in the
     paper: each cell neighbors the cells above, below, left, and right of it,
     and the two along the diagonal from lower left to upper right.
     Its edges wrap around.
+
+    The state is computed in the precision of `b`, `c`, and `d`, so single
+    precision arrays give a faster, single precision result.
 
     Parameters
     ----------
@@ -127,29 +225,18 @@ def step(
     backend
         ``"numba"``, ``"numpy"``, or ``"auto"`` for Numba wherever it can be
         imported and NumPy elsewhere, such as in the browser under Pyodide.
+    num_steps
+        The number of updates to make.
+
+    Returns
+    -------
+    The new `a`, `b`, `c`, and `d`. The arguments are left unchanged.
     """
-    a, b, c, d = _kernels(backend).step(
-        a,
-        b,
-        c,
-        d,
-        alpha=alpha,
-        beta=beta,
-        gamma=gamma,
-        theta=theta,
-        kappa=kappa,
-        mu=mu,
-    )
-
-    # v. Noise: the vapor in each cell grows or shrinks by proportion sigma,
-    # each with probability one half.
-    if sigma:
-        if rng is None:
-            rng = np.random.default_rng()
-        factor = np.where(rng.random(d.shape) < 0.5, 1 - sigma, 1 + sigma)
-        d = d * factor.astype(d.dtype)
-
-    return a, b, c, d
+    grid = _Grid(a, b, c, d, backend=backend)
+    coefficients = grid.coefficients(alpha, beta, gamma, theta, kappa, mu)
+    for _ in range(num_steps):
+        grid.step(coefficients, sigma=sigma, rng=rng)
+    return grid.state()
 
 
 def snowflake(
@@ -166,6 +253,7 @@ def snowflake(
     num_frames: "None | int" = None,
     seed: "None | int" = None,
     backend: str = "auto",
+    dtype: "type | np.dtype" = float,
 ) -> "tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]":
     """
     Grow a snow crystal from a seed with the model of
@@ -208,6 +296,8 @@ def snowflake(
     backend
         ``"numba"``, ``"numpy"``, or ``"auto"`` for Numba wherever it can be
         imported and NumPy elsewhere.
+    dtype
+        The precision to compute in. Single precision is about twice as fast.
 
     Returns
     -------
@@ -227,39 +317,30 @@ def snowflake(
     else:
         frame_steps = np.round(np.linspace(0, num_steps, num_frames)).astype(int)
 
-    a_n = np.asarray(a_0, dtype=bool)
-    b_n = np.zeros(a_n.shape)
-    c_n = a_n.astype(float)
-    d_n = np.where(a_n, 0, float(rho))
+    a_0 = np.asarray(a_0, dtype=bool)
+    grid = _Grid(
+        a=a_0,
+        b=np.zeros(a_0.shape, dtype=dtype),
+        c=a_0.astype(dtype),
+        d=np.where(a_0, 0, rho).astype(dtype),
+        backend=backend,
+    )
+    coefficients = grid.coefficients(alpha, beta, gamma, theta, kappa, mu)
     rng = np.random.default_rng(seed)
 
-    shape = (num_frames,) + a_n.shape
+    shape = (num_frames,) + a_0.shape
     a = np.empty(shape, dtype=bool)
-    b = np.empty(shape)
-    c = np.empty(shape)
-    d = np.empty(shape)
+    b = np.empty(shape, dtype=grid.dtype)
+    c = np.empty(shape, dtype=grid.dtype)
+    d = np.empty(shape, dtype=grid.dtype)
 
     f = 0
     for n in range(num_steps + 1):
         while f < num_frames and frame_steps[f] == n:
-            a[f], b[f], c[f], d[f] = a_n, b_n, c_n, d_n
+            a[f], b[f], c[f], d[f] = grid.state()
             f += 1
         if n == num_steps:
             break
-        a_n, b_n, c_n, d_n = step(
-            a_n,
-            b_n,
-            c_n,
-            d_n,
-            alpha=alpha,
-            beta=beta,
-            gamma=gamma,
-            theta=theta,
-            kappa=kappa,
-            mu=mu,
-            sigma=sigma,
-            rng=rng,
-            backend=backend,
-        )
+        grid.step(coefficients, sigma=sigma, rng=rng)
 
     return a, b, c, d
