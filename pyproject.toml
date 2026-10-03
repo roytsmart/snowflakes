@@ -38,4 +38,8 @@ doc = [
 Homepage = "https://github.com/roytsmart/snowflakes"
 "Web app" = "https://roytsmart.github.io/snowflakes/"
 
+[tool.setuptools]
+# Only the package: web/ holds the web app, not Python to install.
+packages = ["snowflakes"]
+
 [tool.setuptools_scm]
